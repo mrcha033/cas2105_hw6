@@ -1,0 +1,116 @@
+\documentclass[11pt, a4paper]{article}  % Set default font and page size
+
+% Load packages and configure them via options
+\usepackage[utf8]{inputenc}
+\usepackage[left=22mm, right=22mm, top=20mm, bottom=20mm, headheight=40pt, headsep=10pt]{geometry}  % Set margin of page
+\usepackage[parfill]{parskip}  % Set spacing between paragraphs
+\usepackage{amsmath}  % For the equation environment
+\usepackage{graphicx}  % Required for inserting images
+\usepackage[dvipsnames]{xcolor}  % Access color codes
+\usepackage[colorlinks=true]{hyperref}  % Enable hyperlink
+\usepackage{cleveref}  % Enable easy references to sections, figures, and tables
+\usepackage{caption}
+\usepackage{enumitem}  % Required for changing configurations for list
+\usepackage{lmodern}  % For \texttt font style
+\usepackage{booktabs}  % For table formatting
+
+% Define macros, including color codes and macros
+\definecolor{YonseiBlue}{HTML}{183772}
+
+\title{AG News Headline Classification}
+\author{Yunmin CHA (2022123028)}
+
+% Redefine title style
+\makeatletter
+  \def\@maketitle{%
+  \newpage
+  \null
+  \vskip 2em%
+  \begin{flushleft}%
+  {\color{YonseiBlue}\rule{\textwidth}{2pt}}
+  \vskip 5pt%
+  \let \footnote \thanks
+    {\Large \bf \@title \par}%
+    \vskip 1.5em%
+    {\normalsize \bf \lineskip .5em% 
+        \@author
+        \vskip 2pt%
+        \par}
+    {\color{YonseiBlue}\rule{\textwidth}{2pt}}
+    \vskip 1.5em
+  \end{flushleft}%
+  }
+\makeatother
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+\label{sec:introduction}
+
+This report summarizes a lightweight AI pipeline for classifying AG News headlines into four topics (World, Sports, Business, Sci/Tech). The goal is to compare a naive keyword baseline against a small, pre-trained text encoder paired with a simple classifier. All experiments were run locally on CPU with a small subset of the public dataset to keep runtime short while still revealing clear performance gaps between the approaches.
+
+\section{Task Definition}
+\label{sec:definition}
+\begin{itemize}
+    \item \textbf{Task description:} Assign one of four AG News topics to a headline.
+    \item \textbf{Motivation:} News topic tagging is a common routing/filtering step for downstream products such as personalized feeds.
+    \item \textbf{Input / Output:} Input is a single news headline string; output is one of \{World, Sports, Business, Sci/Tech\}.
+    \item \textbf{Success criteria:} High accuracy and balanced macro-F1 on a held-out test split; qualitative improvements over a keyword rule baseline.
+\end{itemize}
+
+\section{Methods}
+\label{sec:methods}
+
+\subsection{Na\"ive Baseline}
+\label{subsec:baseline}
+
+A hand-written keyword matcher scores each class by counting keyword hits in the headline (e.g., \textit{war, minister} for World or \textit{coach, season} for Sports). Ties and zero-hit cases fall back to the majority class in the training subset. This baseline ignores context, negation, and ambiguous terms, so it often fails when headlines lack obvious cue words.
+
+\subsection{AI Pipeline}
+\label{subsec:pipeline}
+
+Headlines are lowercased, encoded with the SentenceTransformer model \texttt{all-MiniLM-L6-v2}, and fed into a multinomial logistic regression classifier (\texttt{C=4.0}, \texttt{max\_iter=1000}, \texttt{n\_jobs=-1}). The encoder runs on GPU if available, otherwise CPU. This keeps the pipeline fast and compact while leveraging a modern embedding model for semantic signals that keyword rules miss.
+
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Datasets}
+\label{sec:experiments:datasets}
+
+The Hugging Face \texttt{ag\_news} dataset was used. A reproducible seed (42) sampled 2{,}000 training examples and 500 test examples. Headlines were lowercased and stripped of surrounding whitespace; no additional preprocessing or data augmentation was applied.
+
+\subsection{Metrics}
+\label{sec:experiments:metrics}
+
+Accuracy and macro-F1 were computed on the held-out test set to balance class-specific performance.
+
+\subsection{Results}
+\label{sec:experiments:results}
+
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Method} & \textbf{Accuracy} & \textbf{Macro-F1} \\
+\midrule
+Naive keyword baseline & 0.460 & 0.447 \\
+MiniLM + logistic regression & 0.850 & 0.852 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The embedding-based pipeline improves accuracy by +0.39 and macro-F1 by +0.41 over the keyword rules, showing the value of contextual representations even with a small linear head.
+
+\paragraph{Qualitative differences.} Examples where the pipeline corrected the baseline:
+\begin{itemize}
+    \item \textit{``paris tourists search for key to `da vinci code' mystery''} \quad (true: World; baseline: Sports; pipeline: World)
+    \item \textit{``profit plunges at international game tech''} \quad (true: Business; baseline: Sports; pipeline: Business)
+    \item \textit{``general mills goes whole grains''} \quad (true: Business; baseline: Sports; pipeline: Business)
+\end{itemize}
+
+\section{Reflection and Limitations}
+\label{sec:reflection}
+
+The keyword baseline was fast but brittle, collapsing many unrelated headlines into the majority class. MiniLM embeddings paired with logistic regression delivered a large jump in both accuracy and macro-F1, with notably better handling of headlines lacking explicit cue words. Remaining errors often involved Business vs.\ World ambiguity and Sci/Tech items that looked like market news. The small 2k/500 split kept runtime under a minute but limits robustness; more data or light class rebalancing could help. Hyperparameters for the classifier were only lightly tuned, so a quick sweep or calibration step might yield incremental gains. Future work could try prompt-based zero-shot classifiers or fine-tuned small transformers to see if marginal improvements justify extra compute.
+
+\end{document}
